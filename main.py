@@ -19,9 +19,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("📚 Mon Catalogue Comics & BD")
-st.caption("Version 16 — Base de secours locale intégrée (Anti-Synchro Vide)")
+st.caption("Version 17 — Générateur Dynamique Universel (Anti-Page Vide)")
 
-# --- BASE DE DONNÉES LOCALES SCRIPTÉES ---
+# --- BASE DE DONNÉES LOCALES ---
 conn = sqlite3.connect("comics_collection.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -50,101 +50,67 @@ TYPES_EDITIONS = ["Standard", "Édition Collector", "Variant Cover", "Intégrale
 ETATS_LIVRE = ["Neuf ✨", "Très bon état 👍", "Bon état 👌", "Usé 📖"]
 FORMATS_LIVRE = ["Hardcover (Rigide)", "Softcover (Souple)", "Deluxe", "Intégrale"]
 
-# --- CATALOGUE DE SECOURS (Si l'API renvoie 0 résultat) ---
-CATALOGUE_INTERNE = [
-    {
-        "mots_cles": ["carnage", "absolute"],
-        "titre": "Absolute Carnage",
-        "editeur": "Panini Comics",
-        "annee": "2020",
-        "auteurs": "Donny Cates, Ryan Stegman",
-        "couverture": "https://m.media-amazon.com/images/I/91E6pSgE6AL._SL1500_.jpg",
-        "edition_suggeree": "Standard"
-    },
-    {
-        "mots_cles": ["carnage", "absolute", "omnibus"],
-        "titre": "Absolute Carnage (Édition Omnibus)",
-        "editeur": "Panini Comics",
-        "annee": "2022",
-        "auteurs": "Donny Cates, Collectif",
-        "couverture": "https://m.media-amazon.com/images/I/81Nz9mXy8QL._SL1500_.jpg",
-        "edition_suggeree": "Intégrale / Omnibus"
-    },
-    {
-        "mots_cles": ["spiderman", "wolverine"],
-        "titre": "Spider-Man & Wolverine : L'Histoire Secrète",
-        "editeur": "Panini Comics",
-        "annee": "2021",
-        "auteurs": "Jason Aaron, Adam Kubert",
-        "couverture": "https://m.media-amazon.com/images/I/81f3P66SgEL._SL1500_.jpg",
-        "edition_suggeree": "Standard"
-    },
-    {
-        "mots_cles": ["batman", "chronicles"],
-        "titre": "Batman Chronicles 1987",
-        "editeur": "Urban Comics",
-        "annee": "2022",
-        "auteurs": "Frank Miller, David Mazzucchelli",
-        "couverture": "https://m.media-amazon.com/images/I/81s+bH6Zf8L._SL1500_.jpg",
-        "edition_suggeree": "Standard"
-    }
-]
-
-# --- FONCTION DE RECHERCHE HYBRIDE ---
-def chercher_editions_vf(terme):
-    if not terme:
+# --- FONCTION DE RECHERCHE ULTRA-FIABLE (AVEC GÉNÉRATEUR AUTOMATIQUE) ---
+def chercher_ou_generer_editions(terme):
+    if not terme or len(terme.strip()) < 2:
         return []
     
-    terme_nettoye = terme.lower().strip()
+    terme_propre = terme.strip().title()
     resultats = []
     vus = set()
     
-    # 1. ESSAI RECHERCHE DANS LE CATALOGUE INTERNE DE SECOURS (Prioritaire si match)
-    for item in CATALOGUE_INTERNE:
-        if any(mc in terme_nettoye for mc in item["mots_cles"]):
-            cle = f"{item['titre']}-{item['editeur']}".lower()
-            if cle not in vus:
-                vus.add(cle)
-                resultats.append(item)
-                
-    # 2. APPEL API GOOGLE BOOKS (En complément)
-    url_google = f"https://www.googleapis.com/books/v1/volumes?q={terme_nettoye}&maxResults=15&langRestrict=fr"
+    # 1. Tentative rapide via Google Books
+    url_google = f"https://www.googleapis.com/books/v1/volumes?q={terme.lower()}&maxResults=5&langRestrict=fr"
     try:
-        resp = requests.get(url_google, timeout=4).json()
+        resp = requests.get(url_google, timeout=2).json()
         for item in resp.get('items', []):
             v_info = item.get('volumeInfo', {})
             titre = v_info.get('title', '')
-            if not titre: continue
-            
-            editeur = v_info.get('publisher', '')
-            if not editeur:
-                editeur = "Panini Comics" if "panini" in titre.lower() else "Urban Comics" if "urban" in titre.lower() else "Éditeur VF"
-            
-            date_p = v_info.get('publishedDate', '2023')
-            annee = date_p.split('-')[0] if '-' in date_p else date_p
-            
-            img_links = v_info.get('imageLinks', {})
-            img_url = img_links.get('thumbnail', img_links.get('smallThumbnail', ''))
-            img_url = img_url.replace("http://", "https://") if img_url else IMAGE_DE_SECOURS
-            
-            cle = f"{titre}-{editeur}".lower()
-            if cle not in vus:
-                vus.add(cle)
-                resultats.append({
-                    "titre": titre, "editeur": editeur, "annee": annee, 
-                    "auteurs": ", ".join(v_info.get('authors', ['Collectif'])), 
-                    "couverture": img_url, "edition_suggeree": "Standard"
-                })
+            if titre:
+                editeur = v_info.get('publisher', 'Panini Comics')
+                if "urban" in titre.lower() or "batman" in titre.lower(): editeur = "Urban Comics"
+                date_p = v_info.get('publishedDate', '2025')
+                annee = date_p.split('-')[0] if '-' in date_p else date_p
+                img_links = v_info.get('imageLinks', {})
+                img_url = img_links.get('thumbnail', IMAGE_DE_SECOURS).replace("http://", "https://")
+                
+                cle = f"{titre}-{editeur}".lower()
+                if cle not in vus:
+                    vus.add(cle)
+                    resultats.append({"titre": titre, "editeur": editeur, "annee": annee, "auteurs": "Collectif", "couverture": img_url, "edition_suggeree": "Standard"})
     except:
-        pass
+        pass # Si le réseau coupe, on ignore l'erreur pour passer à la suite
 
+    # 2. GÉNÉRATEUR INTELLIGENT DE SECOURS (Si l'API n'a rien donné ou a été bloquée)
+    if not resultats:
+        # On détermine un éditeur logique selon le mot tapé
+        editeur_auto = "Urban Comics" if "batman" in terme.lower() or "superman" in terme.lower() or "dc" in terme.lower() else "Panini Comics"
+        
+        # On crée instantanément 2 propositions adaptées à la saisie de l'utilisateur
+        resultats.append({
+            "titre": terme_propre,
+            "editeur": editeur_auto,
+            "annee": "2026",
+            "auteurs": "Marvel / DC Writer",
+            "couverture": "https://images.unsplash.com/photo-1608889174637-3c44f6326f2a?q=80&w=300", # Image Comics stylée
+            "edition_suggeree": "Standard"
+        })
+        resultats.append({
+            "titre": f"{terme_propre} (Édition Omnibus / Intégrale)",
+            "editeur": editeur_auto,
+            "annee": "2026",
+            "auteurs": "Marvel / DC Writer",
+            "couverture": "https://images.unsplash.com/photo-1588345921523-c2dcdb7f1dcd?q=80&w=300", # Autre visuel de secours
+            "edition_suggeree": "Intégrale / Omnibus"
+        })
+        
     return resultats
 
 # --- ONGLETS INTERFACE ---
 onglet_vitrine, onglet_recherche, onglet_stats = st.tabs([
     "🖼️ Mes Étagères (Bookshelf)", 
-    "🔍 Chercher une Édition (Scraper)", 
-    "📊 Statistiques de la Collection"
+    "🔍 Chercher / Générer une Édition", 
+    "📊 Statistiques"
 ])
 
 # --- ONGLET 1 : LES ÉTAGÈRES ---
@@ -181,74 +147,46 @@ with onglet_vitrine:
                                     st.rerun()
             st.markdown('<div class="etagere-bois"></div>', unsafe_allow_html=True)
     else:
-        st.info("Aucun album pour le moment.")
+        st.info("Ta bédéthèque est vide. Utilise le deuxième onglet pour ajouter tes albums !")
 
-# --- ONGLET 2 : RECHERCHE SECURISEE ---
+# --- ONGLET 2 : RECHERCHE ET GENERATEUR ---
 with onglet_recherche:
-    st.subheader("🌐 Recherche d'éditions francophones")
-    saisie = st.text_input("Entre le nom du comic (Ex: absolute carnage, spiderman) :")
+    st.subheader("🌐 Recherche ou Création Immédiate")
+    saisie = st.text_input("Entre le nom de l'album ou du héros (Ex: eddie brock, absolute carnage, venom) :")
     
     if saisie:
-        with st.spinner("Extraction immédiate des fiches..."):
-            editions = chercher_editions_vf(saisie)
+        with st.spinner("Génération de la fiche..."):
+            editions = chercher_ou_generer_editions(saisie)
             
-        if editions:
-            st.success(f"Résultat : {len(editions)} variante(s) chargée(s) avec succès !")
-            for idx, ed in enumerate(editions):
-                with st.expander(f"📚 {ed['titre']} — [{ed['editeur']}] ({ed['annee']})"):
-                    col_img, col_form = st.columns([1, 3])
-                    with col_img:
-                        st.image(ed['couverture'], use_container_width=True)
-                    with col_form:
-                        with st.form(key=f"form_v16_{idx}"):
-                            c1, c2 = st.columns(2)
-                            with c1:
-                                num_tome = st.number_input("Tome N°", min_value=1, value=1, key=f"t_{idx}")
-                                type_ed = st.selectbox("Type d'édition", TYPES_EDITIONS, index=TYPES_EDITIONS.index(ed['edition_suggeree']) if ed['edition_suggeree'] in TYPES_EDITIONS else 0, key=f"ed_{idx}")
-                            with c2:
-                                format_l = st.selectbox("Format", FORMATS_LIVRE, key=f"f_{idx}")
-                                prix_l = st.number_input("Prix payé (€)", min_value=0.0, value=16.0, key=f"p_{idx}")
-                                
-                            statut_l = st.radio("Lecture", ["À lire 🔴", "En cours 🟡", "Lu 🟢"], horizontal=True, key=f"st_{idx}")
+        st.success("Fiche d'édition prête !")
+        for idx, ed in enumerate(editions):
+            with st.expander(f"📚 {ed['titre']} — Modèle suggéré [{ed['editeur']}]"):
+                col_img, col_form = st.columns([1, 3])
+                with col_img:
+                    st.image(ed['couverture'], use_container_width=True)
+                with col_form:
+                    with st.form(key=f"form_v17_{idx}"):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            titre_final = st.text_input("Ajuster le titre si besoin", value=ed['titre'], key=f"titre_{idx}")
+                            editeur_final = st.selectbox("Éditeur", ["Panini Comics", "Urban Comics", "Delcourt", "Glénat"], index=0 if ed['editeur']=="Panini Comics" else 1, key=f"pub_{idx}")
+                            type_ed = st.selectbox("Type d'édition", TYPES_EDITIONS, index=TYPES_EDITIONS.index(ed['edition_suggeree']) if ed['edition_suggeree'] in TYPES_EDITIONS else 0, key=f"ed_{idx}")
+                        with c2:
+                            num_tome = st.number_input("Tome N°", min_value=1, value=1, key=f"t_{idx}")
+                            format_l = st.selectbox("Format", FORMATS_LIVRE, key=f"f_{idx}")
+                            prix_l = st.number_input("Prix payé (€)", min_value=0.0, value=16.0, key=f"p_{idx}")
                             
-                            if st.form_submit_button("📥 Valider et placer sur mon étagère"):
-                                cursor.execute(
-                                    """INSERT INTO comics (titre, editeur, tome, annee_publication, scenariste, prix, note, statut, couverture_url, edition_speciale, etat_livre, format_livre, commentaire) 
-                                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                                    (ed['titre'], ed['editeur'], num_tome, ed['annee'], ed['auteurs'], prix_l, 5, statut_l, ed['couverture'], type_ed, "Neuf ✨", format_l, "")
-                                )
-                                conn.commit()
-                                st.success("Ajouté à la collection !")
-                                st.rerun()
-        else:
-            st.warning("Aucun résultat. Utilise le bloc ci-dessous pour l'ajouter manuellement.")
-
-    # FORMULAIRE MANUEL DE SECOURS (SÉCURITÉ MAXIMUM)
-    st.write("---")
-    with st.expander("➕ L'édition exacte n'est pas là ? Crée-la sur-mesure en 2 secondes"):
-        with st.form(key="manuel_v16"):
-            cx1, cx2 = st.columns(2)
-            with cx1:
-                tm = st.text_input("Titre exact de l'album *")
-                em = st.text_input("Éditeur (Panini, Urban, Delcourt) *")
-                am = st.text_input("Année de publication *", value="2026")
-                tomem = st.number_input("Numéro de tome", min_value=1, value=1)
-            with cx2:
-                typem = st.selectbox("Type d'édition", TYPES_EDITIONS)
-                formm = st.selectbox("Format", FORMATS_LIVRE)
-                prixm = st.number_input("Prix d'achat (€)", min_value=0.0, value=15.0)
-            covm = st.text_input("Lien d'une image de couverture (URL Internet)")
-            
-            if st.form_submit_button("📥 Forcer l'insertion dans ma collection"):
-                if tm and em:
-                    cursor.execute(
-                        """INSERT INTO comics (titre, editeur, tome, annee_publication, scenariste, prix, note, statut, couverture_url, edition_speciale, etat_livre, format_livre, commentaire) 
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (tm, em, tomem, am, "Collectif", prixm, 5, "À lire 🔴", covm if covm else IMAGE_DE_SECOURS, typem, "Neuf ✨", formm, "")
-                    )
-                    conn.commit()
-                    st.success("Album enregistré !")
-                    st.rerun()
+                        statut_l = st.radio("Lecture", ["À lire 🔴", "En cours 🟡", "Lu 🟢"], horizontal=True, key=f"st_{idx}")
+                        
+                        if st.form_submit_button("📥 Valider et ajouter à mes étagères"):
+                            cursor.execute(
+                                """INSERT INTO comics (titre, editeur, tome, annee_publication, scenariste, prix, note, statut, couverture_url, edition_speciale, etat_livre, format_livre, commentaire) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                (titre_final, editeur_final, num_tome, ed['annee'], ed['auteurs'], prix_l, 5, statut_l, ed['couverture'], type_ed, "Neuf ✨", format_l, "")
+                            )
+                            conn.commit()
+                            st.success(f"'{titre_final}' a bien été placé sur tes étagères !")
+                            st.rerun()
 
 # --- ONGLET 3 : STATS ---
 with onglet_stats:
