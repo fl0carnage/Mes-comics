@@ -49,9 +49,14 @@ def chercher_dans_catalogue(recherche):
             annee = doc.get('first_publish_year', datetime.now().year)
             editeur_trouve = doc.get('publisher', ['Autre'])[0]
             
-            # Récupération de l'ID de la couverture si elle existe
+            # Récupération sécurisée de l'ID de la couverture
             cover_id = doc.get('cover_i')
-            img_url = f"https://covers.openlibrary.org/b/id/{cover_id}-M.jpg" if cover_id else "https://via.placeholder.com/150x225.png?text=Pas+de+couverture"
+            
+            # Si le cover_id est absent, vaut 0, ou n'est pas valide, on met l'image par défaut
+            if not cover_id or str(cover_id) == "0":
+                img_url = "https://images.unsplash.com/photo-1588666309990-d68f08e3d4a6?q=80&w=300&auto=format&fit=crop" # Une jolie image de bibliothèque par défaut
+            else:
+                img_url = f"https://covers.openlibrary.org/b/id/{cover_id}-M.jpg"
             
             resultats.append({
                 "Titre": titre_trouve,
