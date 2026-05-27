@@ -185,7 +185,7 @@ with onglet_ajout_manuel:
             tome_man = st.number_input("Numéro / Tome", min_value=1, value=1)
             ed_speciale_man = st.selectbox("Type d'édition", TYPES_EDITIONS)
         with col2:
-            a_man = St.number_input("Année", min_value=1900, max_value=annee_actuelle+2, value=annee_actuelle)
+            a_man = st.number_input("Année", min_value=1900, max_value=annee_actuelle+2, value=annee_actuelle)
             s_man = st.text_input("Auteurs (Scénariste/Dessinateur)")
             p_man = st.number_input("Prix (€)", min_value=0.0, value=0.0, step=0.05)
             url_img_man = st.text_input("Lien/URL d'une image de couverture (facultatif)")
