@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 import requests
-from datetime import datetime
 
 # --- CONFIGURATION STYLE ---
 st.set_page_config(page_title="Ma Bédéthèque Pro", page_icon="📚", layout="wide")
@@ -46,26 +45,33 @@ cursor.execute('''
 ''')
 conn.commit()
 
-# --- MOTEUR DE RECHERCHE MULTI-ÉDITIONS ---
+# --- MOTEUR DE RECHERCHE ULTRA-TOLÉRANT ---
 def rechercher_editions_recifs(nom_comic):
-    # Utilisation de l'API Google Books filtrée sur les comics/BD francophones et imports
-    url = f"https://www.googleapis.com/books/v1/volumes?q={nom_comic}+format:comic&maxResults=12&langRestrict=fr"
+    # Nettoyage de la chaîne de recherche pour enlever les tirets ou espaces parasites à la fin
+    recherche_propre = nom_comic.strip().strip('-').strip()
+    
+    # URL de recherche élargie pour attraper toutes les éditions graphiques (BD, Comics, Manga)
+    url = f"https://www.googleapis.com/books/v1/volumes?q={recherche_propre}&maxResults=20"
     try:
         reponse = requests.get(url).json()
         resultats = []
         for item in reponse.get('items', []):
             volume_info = item.get('volumeInfo', {})
             
+            # On vérifie que c'est bien une catégorie proche des comics ou de la fiction pour éliminer le hors-sujet
+            categories = [cat.lower() for cat in volume_info.get('categories', [])]
+            print(categories) # Debug interne
+            
             titre = volume_info.get('title', 'Titre inconnu')
             auteurs = ", ".join(volume_info.get('authors', ['Inconnu']))
-            editeur = volume_info.get('publisher', 'Inconnu')
+            editeur = volume_info.get('publisher', 'Éditeur inconnu')
             date_pub = volume_info.get('publishedDate', '****')
             annee = date_pub.split('-')[0] if '-' in date_pub else date_pub
             
-            # Gestion de la couverture haute qualité
+            # Gestion optimale des images de couverture
             images = volume_info.get('imageLinks', {})
             img_url = images.get('thumbnail', images.get('smallThumbnail', ''))
-            # Forcer le protocole https pour éviter les blocages d'affichage
+            
             if img_url.startswith('http://'):
                 img_url = img_url.replace('http://', 'https://')
                 
@@ -105,7 +111,6 @@ with onglet_vitrine:
         
         df = df.sort_values(by=["titre", "tome"])
         
-        # Grille de 5 albums par étagère
         nb_cols = 5
         liste_items = list(df.iterrows())
         for i in range(0, len(liste_items), nb_cols):
@@ -116,11 +121,15 @@ with onglet_vitrine:
                     with cols[j]:
                         with st.container(border=True):
                             url_img = row['couverture_url'] if row['couverture_url'] else IMAGE_DE_SECOURS
-                            st.image(url_img, use_container_width=True)
+                            try:
+                                st.image(url_img, use_container_width=True)
+                            except:
+                                st.image(IMAGE_DE_SECOURS, use_container_width=True)
+                                
                             st.markdown(f"**{row['titre']}**")
                             st.caption(f"Tome {row['tome']} | {row['editeur']}")
                             
-                            with st.popover("📝 Fiche BDGest"):
+                            with st.popover("txt 📝 Fiche BDGest"):
                                 st.write(f"**Auteur(s) :** {row['scenariste']}")
                                 st.write(f"**Édition :** {row['edition_speciale']} ({row['format_livre']})")
                                 st.write(f"**État :** {row['etat_livre']}")
@@ -136,10 +145,10 @@ with onglet_vitrine:
     else:
         st.info("Aucun album sur tes étagères. Va sur le deuxième onglet pour lancer une recherche !")
 
-# --- ONGLET 2 : LE MOTEUR DE RECHERCHE DE TOUTES LES ÉDITIONS ---
+# --- ONGLET 2 : MOTEUR DE RECHERCHE DE TOUTES LES EDITIONS ---
 with onglet_recherche_catalogue:
     st.subheader("🌐 Grand Catalogue des Éditions")
-    st.write("Tape le nom d'un héros ou d'un album (ex: *Absolute Carnage*, *Batman Chronicles*, *Lanfeust*...) pour découvrir toutes les déclinaisons existantes.")
+    st.write("Tape le nom d'un héros ou d'un album (ex: *Absolute Carnage*, *Batman Chronicles*, *Spiderman*...) pour découvrir toutes les déclinaisons existantes.")
     
     nom_recherche = st.text_input("Rechercher dans la base mondiale :", placeholder="Ex: Absolute Carnage")
     
@@ -148,21 +157,25 @@ with onglet_recherche_catalogue:
             editions_trouvees = rechercher_editions_recifs(nom_recherche)
             
         if editions_trouvees:
-            st.success(f"Nous avons trouvé {len(editions_trouvees)} déclinaisons correspondantes ! Cliquez sur l'une d'elles pour l'ajouter.")
+            st.success(f"Nous avons trouvé {len(editions_trouvees)} déclinaisons correspondantes ! Ouvrez un volet pour l'ajouter.")
             
-            # Affichage sous forme de liste de fiches cliquables
             for idx, ed in enumerate(editions_trouvees):
-                with st.expander(f"📚 {ed['titre']} — Édité par {ed['editeur']} ({ed['annee']})"):
+                # Nettoyage des chaînes trop longues pour le titre du volet
+                titre_volet = (ed['titre'][:65] + '...') if len(ed['titre']) > 65 else ed['titre']
+                
+                with st.expander(f"📚 {titre_volet} — [{ed['editeur']}] ({ed['annee']})"):
                     col_img, col_form = st.columns([1, 3])
                     
                     with col_img:
-                        st.image(ed['couverture'], width=140)
+                        try:
+                            st.image(ed['couverture'], width=140)
+                        except:
+                            st.image(IMAGE_DE_SECOURS, width=140)
                         
                     with col_form:
                         st.markdown(f"### {ed['titre']}")
-                        st.caption(f"✍️ **Auteurs :** {ed['auteurs']} | 🏛️ **Éditeur d'origine :** {ed['editeur']} | 📅 **Année :** {ed['annee']}")
+                        st.caption(f"✍️ **Auteurs :** {ed['auteurs']} | 🏛️ **Éditeur trouvé :** {ed['editeur']} | 📅 **Année :** {ed['annee']}")
                         
-                        # Formulaire personnalisé de complétion BDGest pour CETTE édition précise
                         with st.form(key=f"form_add_{idx}"):
                             c1, c2, c3 = st.columns(3)
                             with c1:
@@ -182,14 +195,15 @@ with onglet_recherche_catalogue:
                             
                             if click_ajouter:
                                 cursor.execute(
-                                    """INSERT INTO comics (titre, editeur, tome, annee_publication, scenariste, prix, note, statut, couverture_url, edition_speciale, etat_livre, format_livre, commentary) 
+                                    """INSERT INTO comics (titre, editeur, tome, annee_publication, scenariste, prix, note, statut, couverture_url, edition_speciale, etat_livre, format_livre, commentaire) 
                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                                     (ed['titre'], ed['editeur'], num_tome, ed['annee'], ed['auteurs'], prix_l, note_l, statut_l, ed['couverture'], type_ed, etat_l, format_l, comm_l)
                                 )
                                 conn.commit()
-                                st.success(f"✨ L'édition '{ed['titre']}' ({ed['editeur']}) a été placée sur ton étagère !")
+                                st.success(f"✨ L'édition '{ed['titre']}' a été placée sur ton étagère !")
+                                st.rerun()
         else:
-            st.warning("Aucune édition trouvée pour ce nom. Vérifie l'orthographe.")
+            st.warning("Aucune édition trouvée pour ce nom. Essaie en enlevant les symboles ou en tapant juste le nom principal (ex: Carnage).")
 
 # --- ONGLET 3 : SUIVI & STATS ---
 with onglet_stats:
