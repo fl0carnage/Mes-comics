@@ -45,46 +45,49 @@ cursor.execute('''
 ''')
 conn.commit()
 
-# --- MOTEUR DE RECHERCHE ULTRA-TOLÉRANT ---
-def rechercher_editions_recifs(nom_comic):
-    # Nettoyage de la chaîne de recherche pour enlever les tirets ou espaces parasites à la fin
-    recherche_propre = nom_comic.strip().strip('-').strip()
+# --- NOUVEAU MOTEUR DE RECHERCHE PAR ÉDITIONS INDIVIDUELLES ---
+def rechercher_multi_editions(nom_comic):
+    recherche_propre = nom_comic.strip()
+    # On cible directement le catalogue d'éditions d'Open Library
+    url = f"https://openlibrary.org/search.json?q={recherche_propre}&limit=15"
     
-    # URL de recherche élargie pour attraper toutes les éditions graphiques (BD, Comics, Manga)
-    url = f"https://www.googleapis.com/books/v1/volumes?q={recherche_propre}&maxResults=20"
     try:
         reponse = requests.get(url).json()
         resultats = []
-        for item in reponse.get('items', []):
-            volume_info = item.get('volumeInfo', {})
+        
+        for doc in reponse.get('docs', []):
+            titre_global = doc.get('title', 'Titre inconnu')
+            auteurs = ", ".join(doc.get('author_name', ['Inconnu']))
             
-            # On vérifie que c'est bien une catégorie proche des comics ou de la fiction pour éliminer le hors-sujet
-            categories = [cat.lower() for cat in volume_info.get('categories', [])]
-            print(categories) # Debug interne
+            # Open Library regroupe souvent les éditeurs et années sous forme de listes pour chaque édition
+            liste_editeurs = doc.get('publisher', ['Éditeur inconnu'])
+            liste_annees = doc.get('publish_year', ['****'])
+            liste_covers = doc.get('edition_key', [])
             
-            titre = volume_info.get('title', 'Titre inconnu')
-            auteurs = ", ".join(volume_info.get('authors', ['Inconnu']))
-            editeur = volume_info.get('publisher', 'Éditeur inconnu')
-            date_pub = volume_info.get('publishedDate', '****')
-            annee = date_pub.split('-')[0] if '-' in date_pub else date_pub
-            
-            # Gestion optimale des images de couverture
-            images = volume_info.get('imageLinks', {})
-            img_url = images.get('thumbnail', images.get('smallThumbnail', ''))
-            
-            if img_url.startswith('http://'):
-                img_url = img_url.replace('http://', 'https://')
+            # On va générer une entrée par édition disponible (max 4 par œuvre pour ne pas surcharger)
+            nb_editions = min(len(liste_editeurs), 4)
+            for k in range(nb_editions):
+                editeur = liste_editeurs[k]
+                annee = str(liste_annees[min(k, len(liste_annees)-1)])
                 
-            if not img_url:
-                img_url = "https://images.unsplash.com/photo-1610116306796-6ebd3051c330?q=80&w=300"
-
-            resultats.append({
-                "titre": titre,
-                "auteurs": auteurs,
-                "editeur": editeur,
-                "annee": annee,
-                "couverture": img_url
-            })
+                # Récupération de la couverture propre à cette version si dispo
+                if k < len(liste_covers):
+                    img_url = f"https://covers.openlibrary.org/b/olid/{liste_covers[k]}-M.jpg"
+                else:
+                    cover_id = doc.get('cover_i')
+                    img_url = f"https://covers.openlibrary.org/b/id/{cover_id}-M.jpg" if cover_id else ""
+                
+                if not img_url or "-M.jpg" not in img_url:
+                    img_url = "https://images.unsplash.com/photo-1610116306796-6ebd3051c330?q=80&w=300"
+                
+                resultats.append({
+                    "titre": f"{titre_global}",
+                    "auteurs": auteurs,
+                    "editeur": editeur,
+                    "annee": annee,
+                    "couverture": img_url
+                })
+                
         return resultats
     except:
         return []
@@ -129,7 +132,7 @@ with onglet_vitrine:
                             st.markdown(f"**{row['titre']}**")
                             st.caption(f"Tome {row['tome']} | {row['editeur']}")
                             
-                            with st.popover("txt 📝 Fiche BDGest"):
+                            with st.popover("📝 Fiche BDGest"):
                                 st.write(f"**Auteur(s) :** {row['scenariste']}")
                                 st.write(f"**Édition :** {row['edition_speciale']} ({row['format_livre']})")
                                 st.write(f"**État :** {row['etat_livre']}")
@@ -148,19 +151,18 @@ with onglet_vitrine:
 # --- ONGLET 2 : MOTEUR DE RECHERCHE DE TOUTES LES EDITIONS ---
 with onglet_recherche_catalogue:
     st.subheader("🌐 Grand Catalogue des Éditions")
-    st.write("Tape le nom d'un héros ou d'un album (ex: *Absolute Carnage*, *Batman Chronicles*, *Spiderman*...) pour découvrir toutes les déclinaisons existantes.")
+    st.write("Tape un mot-clé (ex: *Carnage*, *Batman*, *Spawn*...) pour afficher toutes les déclinaisons d'éditeurs.")
     
-    nom_recherche = st.text_input("Rechercher dans la base mondiale :", placeholder="Ex: Absolute Carnage")
+    nom_recherche = st.text_input("Rechercher dans la base mondiale :", placeholder="Ex: Carnage")
     
     if nom_recherche:
-        with st.spinner("Récupération de toutes les éditions et variantes..."):
-            editions_trouvees = rechercher_editions_recifs(nom_recherche)
+        with st.spinner("Chargement des différentes éditions du catalogue..."):
+            editions_trouvees = rechercher_multi_editions(nom_recherche)
             
         if editions_trouvees:
-            st.success(f"Nous avons trouvé {len(editions_trouvees)} déclinaisons correspondantes ! Ouvrez un volet pour l'ajouter.")
+            st.success(f"Déclinaisons trouvées pour '{nom_recherche}' ! Choisis ta version ci-dessous :")
             
             for idx, ed in enumerate(editions_trouvees):
-                # Nettoyage des chaînes trop longues pour le titre du volet
                 titre_volet = (ed['titre'][:65] + '...') if len(ed['titre']) > 65 else ed['titre']
                 
                 with st.expander(f"📚 {titre_volet} — [{ed['editeur']}] ({ed['annee']})"):
@@ -174,24 +176,24 @@ with onglet_recherche_catalogue:
                         
                     with col_form:
                         st.markdown(f"### {ed['titre']}")
-                        st.caption(f"✍️ **Auteurs :** {ed['auteurs']} | 🏛️ **Éditeur trouvé :** {ed['editeur']} | 📅 **Année :** {ed['annee']}")
+                        st.caption(f"✍️ **Auteurs :** {ed['auteurs']} | 🏛️ **Éditeur :** {ed['editeur']} | 📅 **Année :** {ed['annee']}")
                         
                         with st.form(key=f"form_add_{idx}"):
                             c1, c2, c3 = st.columns(3)
                             with c1:
                                 num_tome = st.number_input("N° de Tome", min_value=1, value=1, key=f"tome_{idx}")
-                                type_ed = st.selectbox("Type de cette édition", TYPES_EDITIONS, key=f"type_{idx}")
+                                type_ed = st.selectbox("Type d'édition", TYPES_EDITIONS, key=f"type_{idx}")
                             with c2:
-                                format_l = st.selectbox("Format", FORMATS_LIVRE, key=f"form_{idx}")
+                                format_l = st.selectbox("Format du support", FORMATS_LIVRE, key=f"form_{idx}")
                                 etat_l = st.selectbox("État de ton exemplaire", ETATS_LIVRE, key=f"etat_{idx}")
                             with c3:
-                                prix_l = st.number_input("Prix payé (€)", min_value=0.0, value=15.0, step=0.5, key=f"prix_{idx}")
+                                prix_l = st.number_input("Prix d'achat (€)", min_value=0.0, value=15.0, step=0.5, key=f"prix_{idx}")
                                 note_l = st.slider("Ta Note", min_value=1, max_value=5, value=4, key=f"note_{idx}")
                                 
                             statut_l = st.radio("Statut de lecture", ["À lire 🔴", "En cours 🟡", "Lu 🟢"], horizontal=True, key=f"statut_{idx}")
-                            comm_l = st.text_input("Note / Commentaire perso (facultatif)", key=f"comm_{idx}")
+                            comm_l = st.text_input("Commentaire libre (ex: Cover variante, EO...)", key=f"comm_{idx}")
                             
-                            click_ajouter = st.form_submit_button("📥 Ajouter cette édition exacte à mes étagères")
+                            click_ajouter = st.form_submit_button("📥 Valider et placer sur mon étagère")
                             
                             if click_ajouter:
                                 cursor.execute(
@@ -200,10 +202,10 @@ with onglet_recherche_catalogue:
                                     (ed['titre'], ed['editeur'], num_tome, ed['annee'], ed['auteurs'], prix_l, note_l, statut_l, ed['couverture'], type_ed, etat_l, format_l, comm_l)
                                 )
                                 conn.commit()
-                                st.success(f"✨ L'édition '{ed['titre']}' a été placée sur ton étagère !")
+                                st.success(f"✨ L'édition de '{ed['titre']}' chez [{ed['editeur']}] a été ajoutée !")
                                 st.rerun()
         else:
-            st.warning("Aucune édition trouvée pour ce nom. Essaie en enlevant les symboles ou en tapant juste le nom principal (ex: Carnage).")
+            st.warning("Aucun résultat. Essaie avec un mot-clé plus simple.")
 
 # --- ONGLET 3 : SUIVI & STATS ---
 with onglet_stats:
@@ -216,4 +218,4 @@ with onglet_stats:
         st.write("---")
         st.dataframe(df_s[['titre', 'tome', 'editeur', 'annee_publication', 'edition_speciale', 'etat_livre', 'prix', 'statut']], use_container_width=True, hide_index=True)
     else:
-        st.info("Ajoute des albums pour voir les statistiques d'achat et de lecture.")
+        st.info("Ajoute des albums pour voir tes statistiques.")
